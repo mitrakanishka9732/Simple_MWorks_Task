@@ -1,0 +1,116 @@
+///////////////////////////////////////////////////////////////////////////////
+//
+// Eyelink interface
+//
+///////////////////////////////////////////////////////////////////////////////
+
+// NOTE: Current variables assume LEFT eye is being tracked, and that 
+//  calibration is done in MWorks using the raw signal from EL.
+// To change, (un)comment out the appropriate lines below.
+// Note: also commented out unused EL variables.
+// Note: Use eye_(l/r) only if calibrating in EL. Otherwise use pupil_(l/r) (raw signal of tracked eye)
+
+group 'Eye' {
+    var eye_x = 0 // smoothed, calibrated eye position
+    var eye_y = 0
+    var eye_x_calibrated = 0
+    var eye_y_calibrated = 0
+    var eye_x_velocity = 0 // from basic_eye_monitor
+    var eye_y_velocity = 0
+    var eye_in_saccade = false // from basic_eye_monitor
+    // var pupil_rx = 0 // raw signal of right eye
+    // var pupil_ry = 0
+    // var pupil_size_r = 0
+    var pupil_lx = 0 // raw signal of left eye
+    var pupil_ly = 0
+    var pupil_size_l = 0
+    // var blink_l = 0
+    // var saccade_l = 0
+    // var fixation_l = 0
+    // var blink_r = 0
+    // var saccade_r = 0
+    // var fixation_r = 0
+    // var eye_rx = 0
+    // var eye_ry = 0
+    // var eye_lx = 0
+    // var eye_time = 0 // for debugging EL --> MWorks time sync
+    // var eye_ly = 0
+}
+
+// For eyelink-driven calibration:
+// var cal_target_x = 0 (groups = Eye)
+// var cal_target_y = 0 (groups = Eye)
+// circle cal_target (
+//     color = 1,1,1
+//     x_size = 1
+//     x_position = cal_target_x
+//     y_position = cal_target_y
+// )
+// var cal_target_visible (false) {
+//     choose {
+//         when (cal_target_visible) {
+//             queue_stimulus (cal_target)
+//             update_display ()
+//         }
+//         otherwise {
+//             clear_display ()
+//         }
+//     }
+// }
+
+eyelink eye_tracker (
+    tracker_ip = '100.1.1.1'
+    pupil_lx = pupil_lx // raw signal of left eye
+    pupil_ly = pupil_ly
+    pupil_size_l = pupil_size_l // diameter (set in EL)
+    data_interval = 1ms
+    tracking_dist = 1024 // default
+    // blink_l = blink_l
+    // saccade_l = saccade_l
+    // fixation_l = fixation_l
+    // eye_time = eye_time // time on EL clock
+    // eye_lx = eye_lx
+    // eye_ly = eye_ly
+    // eye_rx = eye_rx
+    // eye_ry = eye_ry
+    // pupil_rx = pupil_rx
+    // pupil_ry = pupil_ry
+    // pupil_size_r = pupil_size_r
+    // blink_r = blink_r
+    // saccade_r = saccade_r
+    // fixation_r = fixation_r
+    // cal_target_x = cal_target_x
+    // cal_target_y = cal_target_y
+    // cal_target_visible = cal_target_visible
+)
+
+// MWorks calibrator:
+linear_eye_calibrator eye_calibrator (
+    eyeh_raw = pupil_lx // make sure this is the correct eye
+    eyev_raw = pupil_ly
+    eyeh_calibrated = eye_x_calibrated
+    eyev_calibrated = eye_y_calibrated
+)
+
+// Boxcars smooth over width_samples samples:
+boxcar_filter_1d ( 
+    in1 = eye_x_calibrated
+    out1 = eye_x
+    width_samples = 5
+)
+boxcar_filter_1d (
+    in1 = eye_y_calibrated
+    out1 = eye_y
+    width_samples = 5
+)
+
+basic_eye_monitor (
+    eyeh_calibrated = eye_x
+    eyev_calibrated = eye_y
+    eye_state = eye_in_saccade
+    width_samples = 5
+    saccade_entry_speed = 60 // lower bound on velocity (units/sec) for saccade
+    saccade_exit_speed = 20 // upper bound on velocity (units/sec) for fixation
+    eye_velocity_h = eye_x_velocity
+    eye_velocity_v = eye_y_velocity
+)

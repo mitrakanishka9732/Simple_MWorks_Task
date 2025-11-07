@@ -1,0 +1,19 @@
+///////////////////////////////////////////////////////////////////////////////
+//
+// Firmata output device for Arduino Uno delivery system
+//
+///////////////////////////////////////////////////////////////////////////////
+
+var reward_line = 0
+
+firmata output_device (
+    autostart = true
+    serial_port = '/dev/cu.usbmodem83301'
+    reconnect_interval = 1s
+    ) {
+    // reward line
+    firmata_digital_output (
+        pin_number = 2
+        value = reward_line
+    )
+    }

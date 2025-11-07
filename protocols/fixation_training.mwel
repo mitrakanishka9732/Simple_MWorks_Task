@@ -1,0 +1,210 @@
+%include '../eye_interfaces/mouse.mwel'
+
+stimulus_display (background_color = 0,0,0)
+
+resource ('../sounds')
+audio_file reward_sound ('../sounds/reward.wav')
+audio_file error_sound  ('../sounds/error.wav')
+
+// ================== Tunable parameters / bounds ==================
+var inter_trial_duration         = 2s          // ITI
+var feedback_duration            = 200ms       // show GREEN/RED briefly
+var trial_time_limit             = 10s         // must succeed within this (per trial)
+
+var start_diameter               = 16          // deg
+var start_hold_duration          = 1s
+
+var min_diameter                 = 2
+var max_diameter                 = 16
+
+var min_hold_duration            = 1s
+var max_hold_duration            = 5s
+
+var diameter_step                = 2           // shrink/grow by this
+var hold_step                    = 500ms       // increase/decrease by this
+
+var successes_to_tighten         = 3           // 3 in a row → smaller/longer
+var failures_to_relax            = 2           // 2 timeouts in a row → bigger/shorter
+// ================================================================
+
+// ----------------- Adaptive state -----------------
+var fixation_diameter            = start_diameter
+var fixation_hold_duration       = start_hold_duration
+var consecutive_successes        = 0
+var consecutive_failures         = 0
+// ---------------------------------------------------
+
+// Derived / dynamic
+var fixation_radius = 0.5 * fixation_diameter
+var fix_color = [1,1,1]   // RGB
+
+// Circle at screen center (live-updated)
+ellipse fixation_circle (
+    color      = fix_color[0], fix_color[1], fix_color[2]
+    x_size     = fixation_diameter
+    y_size     = fixation_diameter
+    x_position = 0
+    y_position = 0
+)
+
+// Helpers
+%define show_circle ()
+    live_queue_stimulus (fixation_circle)
+%end
+
+%define hide_circle ()
+    dequeue_stimulus (fixation_circle)
+%end
+
+// Use mouse-based “gaze” from ../eye_interfaces/mouse (eye_x, eye_y)
+%define gaze_in_fixation () (
+    pow(eye_x, 2) + pow(eye_y, 2) <= pow(fixation_radius, 2)
+)
+
+// ------------ Difficulty adjustment helpers ------------
+%define tighten_difficulty ()
+    // smaller circle (down to min)
+    fixation_diameter = max(min_diameter, fixation_diameter - diameter_step)
+    fixation_radius   = 0.5 * fixation_diameter
+    // longer hold (up to max)
+    fixation_hold_duration = min(max_hold_duration, fixation_hold_duration + hold_step)
+%end
+
+%define relax_difficulty ()
+    // bigger circle (up to max)
+    fixation_diameter = min(max_diameter, fixation_diameter + diameter_step)
+    fixation_radius   = 0.5 * fixation_diameter
+    // shorter hold (down to min)
+    fixation_hold_duration = max(min_hold_duration, fixation_hold_duration - hold_step)
+%end
+// -------------------------------------------------------
+
+protocol {
+    task {
+        state 'Begin trial' {
+            // Start the mouse-based eye interface (defined in ../eye_interfaces/mouse)
+            start_io_device (eye_tracker)
+
+            // start in WHITE and ensure stimulus reflects current size
+            fix_color = [1,1,1]
+            show_circle ()
+            update_display ()
+
+            // per-trial timeout
+            start_timer (
+                timer = trial_timer
+                duration = trial_time_limit
+            )
+
+            goto ('Wait for fixation entry')
+        }
+
+        state 'Wait for fixation entry' {
+            goto (
+                target = 'Timeout failure'
+                when = timer_expired(trial_timer)
+            )
+            goto (
+                target = 'Hold fixation'
+                when = gaze_in_fixation()
+            )
+        }
+
+        state 'Hold fixation' {
+            // inside: CYAN while holding
+            fix_color = [0,1,1]
+            update_display ()
+
+            // continuous hold timer
+            start_timer (
+                timer = hold_timer
+                duration = fixation_hold_duration
+            )
+
+            // success if held long enough
+            goto (
+                target = 'Fixation success'
+                when = timer_expired(hold_timer)
+            )
+
+            // if gaze leaves, revert to waiting (trial timer still running)
+            goto (
+                target = 'Fixation broken'
+                when = not gaze_in_fixation()
+            )
+
+            // also allow trial-level timeout while holding
+            goto (
+                target = 'Timeout failure'
+                when = timer_expired(trial_timer)
+            )
+        }
+
+        state 'Fixation broken' {
+            fix_color = [1,1,1]   // back to WHITE
+            update_display ()
+            goto ('Wait for fixation entry')
+        }
+
+        // ---------- SUCCESS PATH ----------
+        state 'Fixation success' {
+            // GREEN feedback + reward
+            fix_color = [0,1,0]
+            update_display ()
+            play_sound (reward_sound)
+            wait (feedback_duration)
+
+            hide_circle ()
+            update_display ()
+            goto ('Update after success')
+        }
+
+        state 'Update after success' {
+            consecutive_successes += 1
+            consecutive_failures   = 0
+
+            if (consecutive_successes >= successes_to_tighten) {
+                tighten_difficulty ()
+                consecutive_successes = 0
+            }
+
+            goto ('ITI')
+        }
+
+        // ---------- FAILURE PATH (timeout) ----------
+        state 'Timeout failure' {
+            // RED feedback + error
+            fix_color = [1,0,0]
+            update_display ()
+            play_sound (error_sound)
+            wait (feedback_duration)
+
+            hide_circle ()
+            update_display ()
+            goto ('Update after failure')
+        }
+
+        state 'Update after failure' {
+            consecutive_failures   += 1
+            consecutive_successes   = 0
+
+            if (consecutive_failures >= failures_to_relax) {
+                relax_difficulty ()
+                consecutive_failures = 0
+            }
+
+            goto ('ITI')
+        }
+
+        // ---------- ITI & Loop ----------
+        state 'ITI' {
+            wait (inter_trial_duration)
+            goto ('End trial')
+        }
+
+        state 'End trial' {
+            stop_io_device (eye_tracker)
+            goto ('Begin trial')   // continuous training loop
+        }
+    }
+}
