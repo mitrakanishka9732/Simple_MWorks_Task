@@ -7,6 +7,9 @@ audio_file reward_sound ('../sounds/reward.wav')
 audio_file error_sound  ('../sounds/error.wav')
 
 // ================== Tunable parameters / bounds ==================
+var log_msg = ''
+
+var trial_count                  = 0           // count trials completed
 var inter_trial_duration         = 2s          // ITI
 var feedback_duration            = 200ms       // show GREEN/RED briefly
 var trial_time_limit             = 10s         // must succeed within this (per trial)
@@ -90,6 +93,12 @@ protocol {
             show_circle ()
             update_display ()
 
+            trial_count += 1
+            log_msg = 'PYTHON WORK PLS WORK'
+            report('$log_msg')
+            report('MSG: TRIAL START, trial_count= $trial_count , diameter= $fixation_diameter , fixation_time= $fixation_hold_duration s')
+
+
             // per-trial timeout
             start_timer (
                 timer = trial_timer
@@ -156,6 +165,8 @@ protocol {
 
             hide_circle ()
             update_display ()
+            report('MSG: TRIAL SUCCESS, trial_count= $trial_count , diameter= $fixation_diameter , fixation_time= $fixation_hold_duration s')
+
             goto ('Update after success')
         }
 
@@ -181,6 +192,8 @@ protocol {
 
             hide_circle ()
             update_display ()
+            report('MSG: TRIAL FAILURE, trial_count= $trial_count , diameter= $fixation_diameter , fixation_time= $fixation_hold_duration s')
+
             goto ('Update after failure')
         }
 
