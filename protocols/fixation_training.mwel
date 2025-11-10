@@ -1,18 +1,25 @@
 // ======================== Eye interface include (choose ONE) ========================
 // For desktop testing (mouse-as-eye):
-%include '../eye_interfaces/mouse.mwel'
+// %include '../eye_interfaces/mouse.mwel'
 
 // For deployment with EyeLink (uncomment this and comment the mouse include above):
-// %include '../eye_interfaces/eyelink.mwel'
+%include '../eye_interfaces/eyelink.mwel'
 // ===================================================================================
 
-%include '../output_interfaces/firmata.mwel'   // reward_line / Arduino output
+// %include '../output_interfaces/firmata.mwel'   // reward_line / Arduino output
+var reward_line = 0
 
 stimulus_display (background_color = 0,0,0)
 
 resource ('../sounds')
-audio_file reward_sound ('../sounds/reward.wav')
-audio_file error_sound  ('../sounds/error.wav')
+
+sound/wav_file reward_sound(
+    path='../sounds/reward.wav'
+)
+sound/wav_file error_sound(
+    path='../sounds/error.wav'
+)
+
 
 // ================== Tunable parameters / bounds ==================
 var log_msg = ''
@@ -39,6 +46,7 @@ var failures_to_relax            = 2           // 2 timeouts in a row → bigger
 
 // --- Hardware reward control ---
 // Small "priming" reward when fixation is acquired (cyan)
+
 var on_fix_reward_ms             = 50          // set to 0 to disable
 // Optional additional pulse on success (after hold)
 var success_reward_ms            = 0           // set >0 to enable a second pulse

@@ -4,7 +4,7 @@
 //
 ///////////////////////////////////////////////////////////////////////////////
 
-// NOTE: Current variables assume LEFT eye is being tracked, and that 
+// NOTE: Current variables assume RIGHT eye is being tracked, and that 
 //  calibration is done in MWorks using the raw signal from EL.
 // To change, (un)comment out the appropriate lines below.
 // Note: also commented out unused EL variables.
@@ -33,8 +33,8 @@ group 'Eye' {
     // var eye_rx = 0
     // var eye_ry = 0
     // var eye_lx = 0
-    // var eye_time = 0 // for debugging EL --> MWorks time sync
     // var eye_ly = 0
+    // var eye_time = 0 // for debugging EL --> MWorks time sync
 }
 
 // For eyelink-driven calibration:
@@ -85,7 +85,8 @@ eyelink eye_tracker (
 )
 
 // MWorks calibrator:
-linear_eye_calibrator eye_calibrator (
+// linear_eye_calibrator eye_calibrator (
+standard_eye_calibrator eye_calibrator ( // use quadratic (9 parameters)
     eyeh_raw = pupil_lx // make sure this is the correct eye
     eyev_raw = pupil_ly
     eyeh_calibrated = eye_x_calibrated
