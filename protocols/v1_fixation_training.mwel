@@ -1,13 +1,13 @@
 // ======================== Eye interface include (choose ONE) ========================
 // For desktop testing (mouse-as-eye):
-%include '../eye_interfaces/mouse.mwel'
+// %include '../eye_interfaces/mouse.mwel'
 
 // For deployment with EyeLink (uncomment this and comment the mouse include above):
-// %include '../eye_interfaces/eyelink.mwel'
+%include '../eye_interfaces/eyelink.mwel'
 // ===================================================================================
 
-// %include '../output_interfaces/labjack.mwel'   // reward_line / Arduino output
-var reward_line = 0
+%include '../output_interfaces/labjack.mwel'   // reward_line / Arduino output
+//var reward_line = 0
 
 stimulus_display (background_color = 0,0,0)
 
