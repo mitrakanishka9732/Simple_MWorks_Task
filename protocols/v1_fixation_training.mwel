@@ -1,0 +1,282 @@
+// ======================== Eye interface include (choose ONE) ========================
+// For desktop testing (mouse-as-eye):
+%include '../eye_interfaces/mouse.mwel'
+
+// For deployment with EyeLink (uncomment this and comment the mouse include above):
+// %include '../eye_interfaces/eyelink.mwel'
+// ===================================================================================
+
+// %include '../output_interfaces/labjack.mwel'   // reward_line / Arduino output
+var reward_line = 0
+
+stimulus_display (background_color = 0,0,0)
+
+resource ('../sounds')
+
+sound/wav_file reward_sound(
+    path='../sounds/reward.wav'
+)
+sound/wav_file error_sound(
+    path='../sounds/error.wav'
+)
+
+
+// ================== Tunable parameters / bounds ==================
+var log_msg = ''
+
+var trial_count                  = 0           // count trials completed
+var inter_trial_duration         = 2s          // ITI
+var feedback_duration            = 200ms       // show GREEN/RED briefly
+var trial_time_limit             = 10s         // must succeed within this (per trial)
+
+var start_diameter               = 16          // deg
+var start_hold_duration          = 1s
+
+var min_diameter                 = 2
+var max_diameter                 = 16
+
+var min_hold_duration            = 1s
+var max_hold_duration            = 5s
+
+var diameter_step                = 2           // shrink/grow by this
+var hold_step                    = 500ms       // increase/decrease by this
+
+var successes_to_tighten         = 3           // 3 in a row → smaller/longer
+var failures_to_relax            = 2           // 2 timeouts in a row → bigger/shorter
+
+// --- Hardware reward control ---
+// Small "priming" reward when fixation is acquired (cyan)
+var on_fix_reward_ms             = 50          // set to 0 to disable
+
+// Continuous pulse while holding fixation (square-wave)
+var hold_pulse_on_ms             = 2           // ON duration (ms)
+var hold_pulse_off_ms            = 2           // OFF duration (ms)
+
+// Optional additional pulse on success (after hold)
+var success_reward_ms            = 0           // set to 1 → 8 ms total; set to 0 to disable
+// ================================================================
+
+// ----------------- Adaptive state -----------------
+var fixation_diameter            = start_diameter
+var fixation_hold_duration       = start_hold_duration
+var consecutive_successes        = 0
+var consecutive_failures         = 0
+// ---------------------------------------------------
+
+// Derived / dynamic
+var fixation_radius = 0.5 * fixation_diameter
+var fix_color = [1,1,1]   // RGB
+
+// Circle at screen center (live-updated)
+ellipse fixation_circle (
+    color      = fix_color[0], fix_color[1], fix_color[2]
+    x_size     = fixation_diameter
+    y_size     = fixation_diameter
+    x_position = 0
+    y_position = 0
+)
+
+// Helpers
+%define show_circle ()
+    live_queue_stimulus (fixation_circle)
+%end
+
+%define hide_circle ()
+    dequeue_stimulus (fixation_circle)
+%end
+
+// Eye coordinates come from the selected eye interface include (mouse or EyeLink)
+%define gaze_in_fixation () (
+    pow(eye_x, 2) + pow(eye_y, 2) <= pow(fixation_radius, 2)
+)
+
+// ------------ Difficulty adjustment helpers ------------
+%define tighten_difficulty ()
+    // smaller circle (down to min)
+    fixation_diameter = max(min_diameter, fixation_diameter - diameter_step)
+    fixation_radius   = 0.5 * fixation_diameter
+    // longer hold (up to max)
+    fixation_hold_duration = min(max_hold_duration, fixation_hold_duration + hold_step)
+%end
+
+%define relax_difficulty ()
+    // bigger circle (up to max)
+    fixation_diameter = min(max_diameter, fixation_diameter + diameter_step)
+    fixation_radius   = 0.5 * fixation_diameter
+    // shorter hold (down to min)
+    fixation_hold_duration = max(min_hold_duration, fixation_hold_duration - hold_step)
+%end
+// -------------------------------------------------------
+
+protocol {
+    task {
+        state 'Begin trial' {
+            // Start the selected eye interface device (both mouse.mwel and eyelink.mwel
+            // define an IO device named 'eye_tracker' that writes eye_x/eye_y)
+            start_io_device (eye_tracker)
+
+            // start in WHITE and ensure stimulus reflects current size
+            fix_color = [1,1,1]
+            show_circle ()
+            update_display ()
+
+            trial_count += 1
+            report('MSG: TRIAL START, trial_count= ' + trial_count + ' , diameter= ' + fixation_diameter + ' , fixation_time= ' + fixation_hold_duration + ' s')
+
+            // per-trial timeout
+            start_timer (
+                timer = trial_timer
+                duration = trial_time_limit
+            )
+
+            goto ('Wait for fixation entry')
+        }
+
+        state 'Wait for fixation entry' {
+            goto (
+                target = 'Timeout failure'
+                when = timer_expired(trial_timer)
+            )
+            goto (
+                target = 'Fixation acquired'
+                when = gaze_in_fixation()
+            )
+        }
+
+        // Deliver a small hardware pulse immediately on fixation acquisition (optional),
+        // then start the hold timer and enter continuous pulsing
+        state 'Fixation acquired' {
+            // inside: CYAN while holding
+            fix_color = [0,1,1]
+            update_display ()
+
+            // Priming reward pulse (hardware), if enabled
+            if (on_fix_reward_ms > 0) {
+                pulse (
+                    variable = reward_line
+                    duration = on_fix_reward_ms * 5ms
+                )
+                report('MSG: ON_FIX_PULSE, ms= ' + on_fix_reward_ms + ' , trial_count= ' + trial_count)
+            }
+
+            // Start the required hold timer
+            start_timer (
+                timer = hold_timer
+                duration = fixation_hold_duration
+            )
+
+            goto ('Fixation pulsing')
+        }
+
+        // NEW: continuous square-wave reward while fixating
+        state 'Fixation pulsing' {
+
+            // One pulse cycle: ON for hold_pulse_on_ms, then OFF for hold_pulse_off_ms
+            pulse (
+                variable = reward_line
+                duration = hold_pulse_on_ms * 1ms
+            )
+            wait (hold_pulse_off_ms * 2ms)
+            
+            // Exit conditions (checked every cycle)
+            goto (
+                target = 'Fixation success'
+                when = timer_expired(hold_timer)
+            )
+            goto (
+                target = 'Timeout failure'
+                when = timer_expired(trial_timer)
+            )
+            goto (
+                target = 'Fixation broken'
+                when = not gaze_in_fixation()
+            )
+
+            // Loop while still fixating and not timed out
+            goto ('Fixation pulsing')
+        }
+
+        state 'Fixation broken' {
+            fix_color = [1,1,1]   // back to WHITE
+            update_display ()
+            goto ('Wait for fixation entry')
+        }
+
+        // ---------- SUCCESS PATH ----------
+        state 'Fixation success' {
+            // GREEN feedback + reward sound
+            fix_color = [0,1,0]
+            update_display ()
+            play_sound (reward_sound)
+
+            // Extra success pulse (set success_reward_ms = 1 to get 8ms; 0 disables)
+            if (success_reward_ms > 0) {
+                pulse (
+                    variable = reward_line
+                    duration = success_reward_ms * 2ms
+                )
+                report('MSG: SUCCESS_PULSE, ms= ' + (success_reward_ms * 8) + ' , trial_count= ' + trial_count)
+            }
+
+            wait (feedback_duration)
+
+            hide_circle ()
+            update_display ()
+            report('MSG: TRIAL SUCCESS, trial_count= ' + trial_count + ' , diameter= ' + fixation_diameter + ' , fixation_time= ' + fixation_hold_duration + ' s')
+
+            goto ('Update after success')
+        }
+
+        state 'Update after success' {
+            consecutive_successes += 1
+            consecutive_failures   = 0
+
+            if (consecutive_successes >= successes_to_tighten) {
+                tighten_difficulty ()
+                consecutive_successes = 0
+                report('MSG: STAIRCASE_UP, trial_count= ' + trial_count + ' , new_diameter= ' + fixation_diameter + ' , new_fixation_time= ' + fixation_hold_duration + ' s')
+            }
+
+            goto ('ITI')
+        }
+
+        // ---------- FAILURE PATH (timeout) ----------
+        state 'Timeout failure' {
+            // RED feedback + error
+            fix_color = [1,0,0]
+            update_display ()
+            play_sound (error_sound)
+            wait (feedback_duration)
+
+            hide_circle ()
+            update_display ()
+            report('MSG: TRIAL FAILURE, trial_count= ' + trial_count + ' , diameter= ' + fixation_diameter + ' , fixation_time= ' + fixation_hold_duration + ' s')
+
+            goto ('Update after failure')
+        }
+
+        state 'Update after failure' {
+            consecutive_failures   += 1
+            consecutive_successes   = 0
+
+            if (consecutive_failures >= failures_to_relax) {
+                relax_difficulty ()
+                consecutive_failures = 0
+                report('MSG: STAIRCASE_DOWN, trial_count= ' + trial_count + ' , new_diameter= ' + fixation_diameter + ' , new_fixation_time= ' + fixation_hold_duration + ' s')
+            }
+
+            goto ('ITI')
+        }
+
+        // ---------- ITI & Loop ----------
+        state 'ITI' {
+            wait (inter_trial_duration)
+            goto ('End trial')
+        }
+
+        state 'End trial' {
+            stop_io_device (eye_tracker)
+            goto ('Begin trial')   // continuous training loop
+        }
+    }
+}
