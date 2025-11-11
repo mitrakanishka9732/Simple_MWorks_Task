@@ -6,8 +6,8 @@
 // %include '../eye_interfaces/eyelink.mwel'
 // ===================================================================================
 
-//%include '../output_interfaces/labjack.mwel'   // reward_line / Arduino output
-var reward_line = 0
+%include '../output_interfaces/labjack.mwel'   // reward_line / Arduino output
+//var reward_line = 0
 
 stimulus_display (background_color = 0,0,0)
 
@@ -176,7 +176,7 @@ protocol {
                 variable = reward_line
                 duration = hold_pulse_on_ms * 1ms
             )
-            wait (hold_pulse_off_ms * 1ms)
+            wait (hold_pulse_off_ms * 2ms)
             
             // Exit conditions (checked every cycle)
             goto (
@@ -213,7 +213,7 @@ protocol {
             if (success_reward_ms > 0) {
                 pulse (
                     variable = reward_line
-                    duration = success_reward_ms * 8ms
+                    duration = success_reward_ms * 2ms
                 )
                 report('MSG: SUCCESS_PULSE, ms= ' + (success_reward_ms * 8) + ' , trial_count= ' + trial_count)
             }
