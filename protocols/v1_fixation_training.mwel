@@ -121,7 +121,7 @@ protocol {
             update_display ()
 
             trial_count += 1
-            report('MSG: TRIAL START, trial_count= ' + trial_count + ' , diameter= ' + fixation_diameter + ' , fixation_time= ' + fixation_hold_duration + ' s')
+            report('MSG: TRIAL START, trial_count= $trial_count , diameter= $fixation_diameter , fixation_time= $fixation_hold_duration s')
 
             // per-trial timeout
             start_timer (
@@ -156,7 +156,7 @@ protocol {
                     variable = reward_line
                     duration = on_fix_reward_ms * 5ms
                 )
-                report('MSG: ON_FIX_PULSE, ms= ' + on_fix_reward_ms + ' , trial_count= ' + trial_count)
+                report('MSG: ON_FIX_PULSE, ms= $on_fix_reward_ms , trial_count= $trial_count')
             }
 
             // Start the required hold timer
@@ -215,14 +215,14 @@ protocol {
                     variable = reward_line
                     duration = success_reward_ms * 2ms
                 )
-                report('MSG: SUCCESS_PULSE, ms= ' + (success_reward_ms * 8) + ' , trial_count= ' + trial_count)
+                report('MSG: SUCCESS_PULSE, ms= $success_reward_ms , trial_count= $trial_count')
             }
 
             wait (feedback_duration)
 
             hide_circle ()
             update_display ()
-            report('MSG: TRIAL SUCCESS, trial_count= ' + trial_count + ' , diameter= ' + fixation_diameter + ' , fixation_time= ' + fixation_hold_duration + ' s')
+            report('MSG: TRIAL SUCCESS, trial_count= $trial_count , diameter= $fixation_diameter , fixation_time= $fixation_hold_duration s')
 
             goto ('Update after success')
         }
@@ -234,7 +234,7 @@ protocol {
             if (consecutive_successes >= successes_to_tighten) {
                 tighten_difficulty ()
                 consecutive_successes = 0
-                report('MSG: STAIRCASE_UP, trial_count= ' + trial_count + ' , new_diameter= ' + fixation_diameter + ' , new_fixation_time= ' + fixation_hold_duration + ' s')
+                report('MSG: STAIRCASE_UP, trial_count= $trial_count , new_diameter= $fixation_diameter , new_fixation_time= $fixation_hold_duration s')
             }
 
             goto ('ITI')
@@ -250,7 +250,7 @@ protocol {
 
             hide_circle ()
             update_display ()
-            report('MSG: TRIAL FAILURE, trial_count= ' + trial_count + ' , diameter= ' + fixation_diameter + ' , fixation_time= ' + fixation_hold_duration + ' s')
+            report('MSG: TRIAL FAILURE, trial_count= $trial_count , diameter= $fixation_diameter , fixation_time= $fixation_hold_duration s')
 
             goto ('Update after failure')
         }
@@ -262,7 +262,7 @@ protocol {
             if (consecutive_failures >= failures_to_relax) {
                 relax_difficulty ()
                 consecutive_failures = 0
-                report('MSG: STAIRCASE_DOWN, trial_count= ' + trial_count + ' , new_diameter= ' + fixation_diameter + ' , new_fixation_time= ' + fixation_hold_duration + ' s')
+                report('MSG: STAIRCASE_DOWN, trial_count= $trial_count , new_diameter= $fixation_diameter , new_fixation_time= $fixation_hold_duration s')
             }
 
             goto ('ITI')
