@@ -1,13 +1,13 @@
 // ======================== Eye interface include (choose ONE) ========================
 // For desktop testing (mouse-as-eye):
-// %include '../eye_interfaces/mouse.mwel'
+%include '../eye_interfaces/mouse.mwel'
 
 // For deployment with EyeLink (uncomment this and comment the mouse include above):
-%include '../eye_interfaces/eyelink.mwel'
+// %include '../eye_interfaces/eyelink.mwel'
 // ===================================================================================
 
-// %include '../output_interfaces/firmata.mwel'   // reward_line / Arduino output
-var reward_line = 0
+%include '../output_interfaces/labjack.mwel'   // reward_line / Arduino output
+//var reward_line = 0
 
 stimulus_display (background_color = 0,0,0)
 
@@ -151,7 +151,7 @@ protocol {
             if (on_fix_reward_ms > 0) {
                 pulse (
                     variable = reward_line
-                    duration = on_fix_reward_ms * 1ms
+                    duration = on_fix_reward_ms * 5ms
                 )
                 report('MSG: ON_FIX_PULSE, ms= ' + on_fix_reward_ms + ' , trial_count= ' + trial_count)
             }
@@ -202,7 +202,7 @@ protocol {
             if (success_reward_ms > 0) {
                 pulse (
                     variable = reward_line
-                    duration = success_reward_ms * 1ms
+                    duration = success_reward_ms * 8ms
                 )
                 report('MSG: SUCCESS_PULSE, ms= ' + success_reward_ms + ' , trial_count= ' + trial_count)
             }
