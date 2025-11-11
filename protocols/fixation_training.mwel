@@ -6,8 +6,8 @@
 // %include '../eye_interfaces/eyelink.mwel'
 // ===================================================================================
 
-%include '../output_interfaces/labjack.mwel'   // reward_line / Arduino output
-//var reward_line = 0
+//%include '../output_interfaces/labjack.mwel'   // reward_line / Arduino output
+var reward_line = 0
 
 stimulus_display (background_color = 0,0,0)
 
@@ -46,10 +46,14 @@ var failures_to_relax            = 2           // 2 timeouts in a row → bigger
 
 // --- Hardware reward control ---
 // Small "priming" reward when fixation is acquired (cyan)
-
 var on_fix_reward_ms             = 50          // set to 0 to disable
+
+// Continuous pulse while holding fixation (square-wave)
+var hold_pulse_on_ms             = 2           // ON duration (ms)
+var hold_pulse_off_ms            = 2           // OFF duration (ms)
+
 // Optional additional pulse on success (after hold)
-var success_reward_ms            = 0           // set >0 to enable a second pulse
+var success_reward_ms            = 0           // set to 1 → 8 ms total; set to 0 to disable
 // ================================================================
 
 // ----------------- Adaptive state -----------------
@@ -111,8 +115,6 @@ protocol {
             // define an IO device named 'eye_tracker' that writes eye_x/eye_y)
             start_io_device (eye_tracker)
 
-            // Firmata autostarts (per firmata.mwel). reward_line defaults to 0.
-
             // start in WHITE and ensure stimulus reflects current size
             fix_color = [1,1,1]
             show_circle ()
@@ -141,7 +143,8 @@ protocol {
             )
         }
 
-        // NEW: deliver a small hardware pulse immediately on fixation acquisition
+        // Deliver a small hardware pulse immediately on fixation acquisition (optional),
+        // then start the hold timer and enter continuous pulsing
         state 'Fixation acquired' {
             // inside: CYAN while holding
             fix_color = [0,1,1]
@@ -156,33 +159,41 @@ protocol {
                 report('MSG: ON_FIX_PULSE, ms= ' + on_fix_reward_ms + ' , trial_count= ' + trial_count)
             }
 
-            goto ('Hold fixation')
-        }
-
-        state 'Hold fixation' {
-            // continuous hold timer for required duration
+            // Start the required hold timer
             start_timer (
                 timer = hold_timer
                 duration = fixation_hold_duration
             )
 
-            // success if held long enough
+            goto ('Fixation pulsing')
+        }
+
+        // NEW: continuous square-wave reward while fixating
+        state 'Fixation pulsing' {
+
+            // One pulse cycle: ON for hold_pulse_on_ms, then OFF for hold_pulse_off_ms
+            pulse (
+                variable = reward_line
+                duration = hold_pulse_on_ms * 1ms
+            )
+            wait (hold_pulse_off_ms * 1ms)
+            
+            // Exit conditions (checked every cycle)
             goto (
                 target = 'Fixation success'
                 when = timer_expired(hold_timer)
             )
-
-            // if gaze leaves, revert to waiting (trial timer still running)
+            goto (
+                target = 'Timeout failure'
+                when = timer_expired(trial_timer)
+            )
             goto (
                 target = 'Fixation broken'
                 when = not gaze_in_fixation()
             )
 
-            // also allow trial-level timeout while holding
-            goto (
-                target = 'Timeout failure'
-                when = timer_expired(trial_timer)
-            )
+            // Loop while still fixating and not timed out
+            goto ('Fixation pulsing')
         }
 
         state 'Fixation broken' {
@@ -198,13 +209,13 @@ protocol {
             update_display ()
             play_sound (reward_sound)
 
-            // Optional success hardware pulse (disabled by default)
+            // Extra success pulse (set success_reward_ms = 1 to get 8ms; 0 disables)
             if (success_reward_ms > 0) {
                 pulse (
                     variable = reward_line
                     duration = success_reward_ms * 8ms
                 )
-                report('MSG: SUCCESS_PULSE, ms= ' + success_reward_ms + ' , trial_count= ' + trial_count)
+                report('MSG: SUCCESS_PULSE, ms= ' + (success_reward_ms * 8) + ' , trial_count= ' + trial_count)
             }
 
             wait (feedback_duration)
