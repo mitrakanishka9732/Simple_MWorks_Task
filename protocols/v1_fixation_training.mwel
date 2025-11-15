@@ -1,13 +1,13 @@
 // ======================== Eye interface include (choose ONE) ========================
 // For desktop testing (mouse-as-eye):
-// %include '../eye_interfaces/mouse.mwel'
+%include '../eye_interfaces/mouse.mwel'
 
 // For deployment with EyeLink (uncomment this and comment the mouse include above):
-%include '../eye_interfaces/eyelink.mwel'
+// %include '../eye_interfaces/eyelink.mwel'
 // ===================================================================================
 
-%include '../output_interfaces/labjack.mwel'   // reward_line / Arduino output
-//var reward_line = 0
+// %include '../output_interfaces/labjack.mwel'   // reward_line / Arduino output
+var reward_line = 0
 
 stimulus_display (background_color = 0,0,0)
 
@@ -62,6 +62,11 @@ var fixation_hold_duration       = start_hold_duration
 var consecutive_successes        = 0
 var consecutive_failures         = 0
 // ---------------------------------------------------
+
+// -------- Session-level performance counters --------
+var total_successes              = 0
+var total_failures               = 0
+// ----------------------------------------------------
 
 // Derived / dynamic
 var fixation_radius = 0.5 * fixation_diameter
@@ -209,6 +214,9 @@ protocol {
             update_display ()
             play_sound (reward_sound)
 
+            // Update session-wide success counter BEFORE logging
+            total_successes += 1
+
             // Extra success pulse (set success_reward_ms = 1 to get 8ms; 0 disables)
             if (success_reward_ms > 0) {
                 pulse (
@@ -222,7 +230,7 @@ protocol {
 
             hide_circle ()
             update_display ()
-            report('MSG: TRIAL SUCCESS, trial_count= $trial_count , diameter= $fixation_diameter , fixation_time= $fixation_hold_duration s')
+            report('MSG: TRIAL SUCCESS, trial_count= $trial_count , diameter= $fixation_diameter , fixation_time= $fixation_hold_duration s, successes= $total_successes / $trial_count , failures= $total_failures / $trial_count')
 
             goto ('Update after success')
         }
@@ -250,7 +258,11 @@ protocol {
 
             hide_circle ()
             update_display ()
-            report('MSG: TRIAL FAILURE, trial_count= $trial_count , diameter= $fixation_diameter , fixation_time= $fixation_hold_duration s')
+
+            // Update session-wide failure counter BEFORE logging
+            total_failures += 1
+
+            report('MSG: TRIAL FAILURE, trial_count= $trial_count , diameter= $fixation_diameter , fixation_time= $fixation_hold_duration s, successes= $total_successes / $trial_count , failures= $total_failures / $trial_count')
 
             goto ('Update after failure')
         }
