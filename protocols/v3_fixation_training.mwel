@@ -46,10 +46,9 @@ var successes_to_tighten         = 3
 var failures_to_relax            = 2
 
 // --- Hardware reward control ---
-var on_fix_reward_ms             = 50          // priming pulse on fixation acquire (0 = off)
-var hold_pulse_on_ms             = 2           // ON during hold (square wave)
-var hold_pulse_off_ms            = 2           // OFF during hold (square wave)
-var success_reward_ms            = 0           // set to 1 → 8 ms total; 0 disables
+// NOTE: As requested, **no reward** on acquisition or during hold.
+// Only reward after success via success_reward_ms.
+var success_reward_ms            = 50          // ms of juice after success (set 0 to disable)
 
 // --- Random placement control ---
 var edge_padding_deg             = 1.0         // extra pad from edges (deg)
@@ -109,7 +108,7 @@ ellipse fixation_circle (
     )
 %end
 
-// v1-style staircase helpers: shorter→longer, bigger→smaller with successes
+// v1-style staircase helpers
 %define tighten_difficulty ()
     fixation_diameter = max(min_diameter, fixation_diameter - diameter_step)
     fixation_radius   = 0.5 * fixation_diameter
@@ -163,36 +162,22 @@ protocol {
             )
         }
 
-        // On acquire: cyan, optional priming pulse, then start hold timer
+        // On acquire: CYAN, but **no reward** here.
         state 'Fixation acquired' {
             fix_color = [0,1,1]
             update_display ()
 
-            if (on_fix_reward_ms > 0) {
-                pulse (
-                    variable = reward_line
-                    duration = on_fix_reward_ms * 5ms
-                )
-                report('MSG: ON_FIX_PULSE, ms= $on_fix_reward_ms , trial_count= $trial_count , diameter= $fixation_diameter , fixation_time= $fixation_hold_duration s, pos= ($fix_x , $fix_y) , successes= $total_successes / $trial_count , failures= $total_failures / $trial_count')
-            }
-
+            // Start the required hold timer
             start_timer (
                 timer = hold_timer
                 duration = fixation_hold_duration
             )
-            goto ('Fixation pulsing')
+
+            goto ('Hold fixation')
         }
 
-        // Continuous square-wave reward while fixating
-        state 'Fixation pulsing' {
-            // --- actions first (MWEL rule) ---
-            pulse (
-                variable = reward_line
-                duration = hold_pulse_on_ms * 1ms
-            )
-            wait  (hold_pulse_off_ms * 1ms)
-
-            // --- transitions after actions ---
+        // Hold fixation with NO juice; just timing & monitoring
+        state 'Hold fixation' {
             goto (
                 target = 'Fixation success'
                 when = timer_expired(hold_timer)
@@ -205,9 +190,6 @@ protocol {
                 target = 'Fixation broken'
                 when = not gaze_in_fixation()
             )
-
-            // loop if still fixating and no timeout/success
-            goto ('Fixation pulsing')
         }
 
         state 'Fixation broken' {
@@ -221,20 +203,20 @@ protocol {
             // Update session-level success count first
             total_successes += 1
 
-            fix_color = [0,1,0]   // GREEN
+            // GREEN + reward sound
+            fix_color = [0,1,0]
             update_display ()
             play_sound (reward_sound)
 
-            // Optional extra success pulse at end of fixation
+            // *** ONLY HERE: deliver juice reward ***
             if (success_reward_ms > 0) {
                 pulse (
                     variable = reward_line
-                    duration = success_reward_ms * 8ms
+                    duration = success_reward_ms * 1ms
                 )
                 report('MSG: SUCCESS_PULSE, ms= $success_reward_ms , trial_count= $trial_count , diameter= $fixation_diameter , fixation_time= $fixation_hold_duration s, pos= ($fix_x , $fix_y) , successes= $total_successes / $trial_count , failures= $total_failures / $trial_count')
             }
 
-            // Explicit log that reward was delivered after success
             report('MSG: REWARD_AFTER_SUCCESS, trial_count= $trial_count , diameter= $fixation_diameter , fixation_time= $fixation_hold_duration s, pos= ($fix_x , $fix_y) , successes= $total_successes / $trial_count , failures= $total_failures / $trial_count')
 
             wait (feedback_duration)
