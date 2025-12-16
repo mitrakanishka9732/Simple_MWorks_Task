@@ -25,22 +25,22 @@ sound/wav_file error_sound(
 var log_msg = ''
 
 var trial_count                  = 0           // count trials completed
-var inter_trial_duration         = 2s          // ITI
+var inter_trial_duration         = 200ms       // baseline ITI
 var feedback_duration            = 200ms       // show GREEN/RED briefly
-var trial_time_limit             = 10s         // must succeed within this (per trial)
+var trial_time_limit             = 5s          // must succeed within this (per trial)
 
 // v1-style starting values
-var start_diameter               = 16          // deg
-var start_hold_duration          = 1s          // short hold at the beginning
+var start_diameter               = 14          // deg
+var start_hold_duration          = 200ms       // short hold at the beginning
 
-var min_diameter                 = 2
-var max_diameter                 = 16
+var min_diameter                 = 1
+var max_diameter                 = 14
 
-var min_hold_duration            = 1s
+var min_hold_duration            = 200ms
 var max_hold_duration            = 5s
 
-var diameter_step                = 2
-var hold_step                    = 500ms
+var diameter_step                = 1.75
+var hold_step                    = 250ms
 
 var successes_to_tighten         = 3
 var failures_to_relax            = 2
@@ -48,10 +48,17 @@ var failures_to_relax            = 2
 // --- Hardware reward control ---
 // NOTE: As requested, **no reward** on acquisition or during hold.
 // Only reward after success via success_reward_ms.
-var success_reward_ms            = 50          // ms of juice after success (set 0 to disable)
+var success_reward_ms            = 300         // ms of juice after success (set 0 to disable)
 
 // --- Random placement control ---
 var edge_padding_deg             = 1.0         // extra pad from edges (deg)
+
+// --- ITI escalation control after error streaks ---
+var iti_baseline                 = 200ms       // reference baseline ITI
+var error_block_count            = 0           // how many 3-error blocks have occurred
+var consecutive_error_trials     = 0           // counts consecutive error trials
+var extended_iti_pending         = 0           // flag: apply extended ITI on next ITI state
+var extended_iti_duration        = 200ms       // duration to use when extended ITI is pending
 // ================================================================
 
 // ----------------- Adaptive state (v1-style) -----------------
@@ -63,6 +70,9 @@ var consecutive_failures         = 0
 // Session-level performance counts
 var total_successes              = 0
 var total_failures               = 0
+
+// For logging fixation time in ms
+var fixation_hold_ms             = 0
 // ---------------------------------------------------
 
 // Derived / dynamic
@@ -110,14 +120,14 @@ ellipse fixation_circle (
 
 // v1-style staircase helpers
 %define tighten_difficulty ()
-    fixation_diameter = max(min_diameter, fixation_diameter - diameter_step)
-    fixation_radius   = 0.5 * fixation_diameter
+    fixation_diameter      = max(min_diameter, fixation_diameter - diameter_step)
+    fixation_radius        = 0.5 * fixation_diameter
     fixation_hold_duration = min(max_hold_duration, fixation_hold_duration + hold_step)
 %end
 
 %define relax_difficulty ()
-    fixation_diameter = min(max_diameter, fixation_diameter + diameter_step)
-    fixation_radius   = 0.5 * fixation_diameter
+    fixation_diameter      = min(max_diameter, fixation_diameter + diameter_step)
+    fixation_radius        = 0.5 * fixation_diameter
     fixation_hold_duration = max(min_hold_duration, fixation_hold_duration - hold_step)
 %end
 // -------------------------------------------------------
@@ -128,7 +138,7 @@ protocol {
             start_io_device (eye_tracker)
 
             // Recompute radius from current staircase state (diameter may have changed)
-            fixation_radius = 0.5 * fixation_diameter
+            fixation_radius = 1.25 * fixation_diameter
 
             // Sample a new random position with edge padding
             sample_fix_position ()
@@ -140,7 +150,10 @@ protocol {
 
             trial_count += 1
 
-            report('MSG: TRIAL START, trial_count= $trial_count , diameter= $fixation_diameter , fixation_time= $fixation_hold_duration s, pos= ($fix_x , $fix_y) , successes= $total_successes / $trial_count , failures= $total_failures / $trial_count')
+            // For reporting: convert hold duration to ms
+            fixation_hold_ms = fixation_hold_duration / 1ms
+
+            report('MSG: TRIAL START, trial_count= $trial_count , diameter= $fixation_diameter , fixation_time= $fixation_hold_ms ms, pos= ($fix_x , $fix_y) , successes= $total_successes / $trial_count , failures= $total_failures / $trial_count')
 
             // per-trial timeout
             start_timer (
@@ -203,6 +216,9 @@ protocol {
             // Update session-level success count first
             total_successes += 1
 
+            // A success breaks any error streak
+            consecutive_error_trials = 0
+
             // GREEN + reward sound
             fix_color = [0,1,0]
             update_display ()
@@ -214,17 +230,20 @@ protocol {
                     variable = reward_line
                     duration = success_reward_ms * 1ms
                 )
-                report('MSG: SUCCESS_PULSE, ms= $success_reward_ms , trial_count= $trial_count , diameter= $fixation_diameter , fixation_time= $fixation_hold_duration s, pos= ($fix_x , $fix_y) , successes= $total_successes / $trial_count , failures= $total_failures / $trial_count')
+                fixation_hold_ms = fixation_hold_duration / 1ms
+                report('MSG: SUCCESS_PULSE, ms= $success_reward_ms , trial_count= $trial_count , diameter= $fixation_diameter , fixation_time= $fixation_hold_ms ms, pos= ($fix_x , $fix_y) , successes= $total_successes / $trial_count , failures= $total_failures / $trial_count')
             }
 
-            report('MSG: REWARD_AFTER_SUCCESS, trial_count= $trial_count , diameter= $fixation_diameter , fixation_time= $fixation_hold_duration s, pos= ($fix_x , $fix_y) , successes= $total_successes / $trial_count , failures= $total_failures / $trial_count')
+            fixation_hold_ms = fixation_hold_duration / 1ms
+            report('MSG: REWARD_AFTER_SUCCESS, trial_count= $trial_count , diameter= $fixation_diameter , fixation_time= $fixation_hold_ms ms, pos= ($fix_x , $fix_y) , successes= $total_successes / $trial_count , failures= $total_failures / $trial_count')
 
             wait (feedback_duration)
 
             hide_circle ()
             update_display ()
 
-            report('MSG: TRIAL SUCCESS, trial_count= $trial_count , diameter= $fixation_diameter , fixation_time= $fixation_hold_duration s, pos= ($fix_x , $fix_y) , successes= $total_successes / $trial_count , failures= $total_failures / $trial_count')
+            fixation_hold_ms = fixation_hold_duration / 1ms
+            report('MSG: TRIAL SUCCESS, trial_count= $trial_count , diameter= $fixation_diameter , fixation_time= $fixation_hold_ms ms, pos= ($fix_x , $fix_y) , successes= $total_successes / $trial_count , failures= $total_failures / $trial_count')
 
             goto ('Update after success')
         }
@@ -236,7 +255,8 @@ protocol {
             if (consecutive_successes >= successes_to_tighten) {
                 tighten_difficulty ()
                 consecutive_successes = 0
-                report('MSG: STAIRCASE_UP, trial_count= $trial_count , new_diameter= $fixation_diameter , new_fixation_time= $fixation_hold_duration s, successes= $total_successes / $trial_count , failures= $total_failures / $trial_count')
+                fixation_hold_ms = fixation_hold_duration / 1ms
+                report('MSG: STAIRCASE_UP, trial_count= $trial_count , new_diameter= $fixation_diameter , new_fixation_time= $fixation_hold_ms ms, successes= $total_successes / $trial_count , failures= $total_failures / $trial_count')
             }
 
             goto ('ITI')
@@ -247,6 +267,9 @@ protocol {
             // Update session-level failure count first
             total_failures += 1
 
+            // Update streak of error trials
+            consecutive_error_trials += 1
+
             fix_color = [1,0,0]   // RED
             update_display ()
             play_sound (error_sound)
@@ -255,19 +278,34 @@ protocol {
             hide_circle ()
             update_display ()
 
-            report('MSG: TRIAL FAILURE, trial_count= $trial_count , diameter= $fixation_diameter , fixation_time= $fixation_hold_duration s, pos= ($fix_x , $fix_y) , successes= $total_successes / $trial_count , failures= $total_failures / $trial_count')
+            fixation_hold_ms = fixation_hold_duration / 1ms
+            report('MSG: TRIAL FAILURE, trial_count= $trial_count , diameter= $fixation_diameter , fixation_time= $fixation_hold_ms ms, pos= ($fix_x , $fix_y) , successes= $total_successes / $trial_count , failures= $total_failures / $trial_count')
 
             goto ('Update after failure')
         }
 
         state 'Update after failure' {
+            // Staircase logic for difficulty
             consecutive_failures   += 1
             consecutive_successes   = 0
 
             if (consecutive_failures >= failures_to_relax) {
                 relax_difficulty ()
                 consecutive_failures = 0
-                report('MSG: STAIRCASE_DOWN, trial_count= $trial_count , new_diameter= $fixation_diameter , new_fixation_time= $fixation_hold_duration s, successes= $total_successes / $trial_count , failures= $total_failures / $trial_count')
+                fixation_hold_ms = fixation_hold_duration / 1ms
+                report('MSG: STAIRCASE_DOWN, trial_count= $trial_count , new_diameter= $fixation_diameter , new_fixation_time= $fixation_hold_ms ms, successes= $total_successes / $trial_count , failures= $total_failures / $trial_count')
+            }
+
+            // --- ITI escalation based on 3-error streaks ---
+            if (consecutive_error_trials >= 3) {
+                error_block_count += 1
+
+                // Extended ITI: 2.0s, then 2.1s, 2.2s, ... for each successive 3-error block
+                extended_iti_duration = 2s + (error_block_count - 1) * 100ms
+                extended_iti_pending  = 1
+                consecutive_error_trials = 0
+
+                report('MSG: EXTENDED_ITI_SCHEDULED, trial_count= $trial_count , block_index= $error_block_count , extended_iti= $extended_iti_duration')
             }
 
             goto ('ITI')
@@ -275,7 +313,15 @@ protocol {
 
         // ---------- ITI & Loop ----------
         state 'ITI' {
-            wait (inter_trial_duration)
+            // If we have an extended ITI pending from a 3-error streak, use it once
+            if (extended_iti_pending) {
+                wait (extended_iti_duration)
+                extended_iti_pending = 0
+            }
+            else {
+                wait (inter_trial_duration)
+            }
+
             goto ('End trial')
         }
 
