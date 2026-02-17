@@ -1,16 +1,16 @@
 // ======================== Eye interface include (choose ONE) ========================
 // For desktop testing (mouse-as-eye):
-// %include '../eye_interfaces/mouse.mwel'
+%include '../eye_interfaces/mouse.mwel'
 
 // For deployment with EyeLink (uncomment this and comment the mouse include above):
-%include '../eye_interfaces/eyelink.mwel'
+// %include '../eye_interfaces/eyelink.mwel'
 // ===================================================================================
 
 
 // ======================== Reward / output interface (optional) =====================
 // Uncomment if using LabJack output interface:
-%include '../output_interfaces/firmata.mwel'
-// var reward_line = 0
+// %include '../output_interfaces/firmata.mwel'
+var reward_line = 0
 // ===================================================================================
 
 stimulus_display (background_color = 0,0,0)
@@ -21,7 +21,7 @@ var trial_count              = 0
 var inter_trial_duration     = 800ms
 
 // Pursuit config
-var ball_size                = 1.0           // deg
+var ball_size                = 3.0           // deg
 var max_ball_speed           = 20.0          // deg/s
 var n_cycles                 = 1.0
 var pursuit_delay_dur        = 0ms
@@ -31,7 +31,8 @@ var pursuit_thetas           = [0, 90, 180, 270]
 
 // Velocity match / reward pulsing
 var min_ball_speed           = 1.0           // deg/s
-var speed_tol                = 5.0           // deg/s tolerance
+var min_gaze_speed           = 0.5           // deg/s
+var speed_tol                = 10.0           // deg/s tolerance
 var hold_pulse_on_ms         = 50
 var hold_pulse_off_ms        = 150
 
@@ -131,7 +132,7 @@ render_actions update_ball_position (
     ) / dt_s
 
     // Velocity match gate
-    vel_match = (ball_speed > min_ball_speed) and (abs(gaze_speed - ball_speed) <= speed_tol)
+    vel_match = (ball_speed > min_ball_speed) and (gaze_speed > min_gaze_speed) and (abs(gaze_speed - ball_speed) <= speed_tol)
 
     // Color: cyan only when velocity matched, else white
     if (vel_match) {
