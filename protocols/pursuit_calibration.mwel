@@ -1,329 +1,270 @@
 // ======================== Eye interface include (choose ONE) ========================
 // For desktop testing (mouse-as-eye):
-%include '../eye_interfaces/mouse.mwel'
+// %include '../eye_interfaces/mouse.mwel'
 
 // For deployment with EyeLink (uncomment this and comment the mouse include above):
-// %include '../eye_interfaces/eyelink.mwel'
+%include '../eye_interfaces/eyelink.mwel'
 // ===================================================================================
 
 
 // ======================== Reward / output interface (optional) =====================
-// Uncomment ONE if you have hardware mapping reward_line -> output:
-//
-// %include '../output_interfaces/labjack.mwel'
-// %include '../output_interfaces/firmata.mwel'
-//
-var reward_line = 0
+// Uncomment if using LabJack output interface:
+%include '../output_interfaces/firmata.mwel'
+// var reward_line = 0
 // ===================================================================================
 
 stimulus_display (background_color = 0,0,0)
 
-resource ('../sounds')
-sound/wav_file reward_sound(path='../sounds/reward.wav')
-sound/wav_file error_sound(path='../sounds/error.wav')
-
 
 // ================== Tunable parameters ==================
-var trial_count            = 0
-var inter_trial_duration   = 800ms
+var trial_count              = 0
+var inter_trial_duration     = 800ms
 
-var ball_size              = 1
-var pursuit_win            = 5                 // REQUIRED for circular_fixation_point trigger_width
-var pursuit_thetas         = [0, 90, 180, 270] // deg
-var n_cycles               = 1
-var max_ball_speed         = 20                // deg/s
+// Pursuit config
+var ball_size                = 1.0           // deg
+var max_ball_speed           = 20.0          // deg/s
+var n_cycles                 = 1.0
+var pursuit_delay_dur        = 0ms
 
-// Set 0 for immediate smooth motion
-var pursuit_delay_dur      = 0ms
+// Directions (deg)
+var pursuit_thetas           = [0, 90, 180, 270]
 
-// -------- Velocity match tuning --------
-var vel_match_tol          = 10        // deg/s (vector error tolerance)
-var min_ball_speed_reward  = 2        // deg/s (avoid rewarding near-zero)
-var vel_match_min_ms       = 50       // must match this long before rewarding
-var vel_smooth_alpha       = 0.25     // 0..1 smoothing for gaze velocity
-// --------------------------------------
+// Velocity match / reward pulsing
+var min_ball_speed           = 1.0           // deg/s
+var speed_tol                = 5.0           // deg/s tolerance
+var hold_pulse_on_ms         = 50
+var hold_pulse_off_ms        = 150
 
-// -------- Reward pulsing (while matched) --------
-var hold_pulse_on_ms       = 30
-var hold_pulse_off_ms      = 70
-// -----------------------------------------------
+// Safety for dt
+var dt_s_min                 = 0.005         // seconds (5ms)
+// ========================================================
 
 
-// ----------------- Display geometry -----------------
-var display_width  = display_bounds('right') - display_bounds('left')
-var display_height = display_bounds('top')   - display_bounds('bottom')
-
-
-// ----------------- Convenience macros ----------------
+// ----------------- Utility macros -----------------
 %define cos_deg(deg) cos(deg * pi() / 180)
 %define sin_deg(deg) sin(deg * pi() / 180)
-%define sample_list(list) list[disc_rand(0, size(list) - 1)]
+
+%define sample_theta ()
+    p_theta = pursuit_thetas[disc_rand(0, size(pursuit_thetas) - 1)]
+%end
+
+%define pursuit_fn(t_s) pursuit_range * ((1 - cos(2*pi() * pursuit_hz * t_s)) / 2)
+// ---------------------------------------------------
 
 
-// ----------------- Changing variables ----------------
-var p_theta            = 0
-var pursuit_range      = 1
+// ----------------- Display bounds (deg) -----------------
+var display_height = display_bounds("top") - display_bounds("bottom")
+var display_width  = display_bounds("right") - display_bounds("left")
+// --------------------------------------------------------
+
+
+// ----------------- State variables -----------------
+var p_theta            = 0.0
+
+var pursuit_range      = 5.0
 var pursuit_hz         = 0.1
-var pursuit_dur_ms     = 0
+var pursuit_duration_s = 2.0
+var pursuit_duration   = 2s
 
-var ball_start_pos     = {'x': 0, 'y': 0}
-var ball_pos           = {'x': 0, 'y': 0}
+var ball_start_x       = 0.0
+var ball_start_y       = 0.0
+var ball_x             = 0.0
+var ball_y             = 0.0
 
-// Ball color scalars (white vs cyan)
-var ball_r             = 1
-var ball_g             = 1
-var ball_b             = 1
+// Ball color: white default, cyan when velocity matched
+var ball_color         = [1,1,1]
 
-// circular_fixation_point required trigger variable
-var on_ball            = 0
-
-// render time (microseconds) + motion gating
+// Velocity tracking
 var el_t               = 0
-var move_enabled       = 0
-var t_move_start       = 0
+var last_el_t          = 0
 
-// Motion intermediate vars (must be global; no var-inside-render_actions)
-var t_rel_s            = 0
-var s_t                = 0
-var ds_dt              = 0
+var last_eye_x         = 0.0
+var last_eye_y         = 0.0
+var last_ball_x        = 0.0
+var last_ball_y        = 0.0
 
-// Velocity estimation state
-var prev_el_t          = 0
-var prev_eye_x         = 0
-var prev_eye_y         = 0
-
-var dt_s               = 0
-var dt_s_safe          = 0
-var dt_ms              = 0
-
-var gaze_vx            = 0
-var gaze_vy            = 0
-var gaze_vx_f          = 0
-var gaze_vy_f          = 0
-
-var ball_vx            = 0
-var ball_vy            = 0
-var ball_speed         = 0
-
-var vel_err            = 0
-var raw_vel_match      = 0
-var match_accum_ms     = 0
+var dt_s               = 0.0
+var t_s                = 0.0     // ✅ MUST be declared outside render_actions
+var ball_speed         = 0.0
+var gaze_speed         = 0.0
 var vel_match          = 0
+
+var reward_pulses      = 0
+// ---------------------------------------------------
 
 
 // ----------------- Ball stimulus -----------------
-// NOTE: circular_fixation_point REQUIRES trigger_flag + trigger_watch + trigger_width
-circular_fixation_point ball (
-    color = ball_r, ball_g, ball_b
-    x_size = ball_size
-    y_size = ball_size
-    x_position = ball_pos['x']
-    y_position = ball_pos['y']
-
-    trigger_width   = pursuit_win
-    trigger_watch_x = eye_x
-    trigger_watch_y = eye_y
-    trigger_flag    = on_ball
+ellipse ball (
+    color      = ball_color[0], ball_color[1], ball_color[2]
+    x_size     = ball_size
+    y_size     = ball_size
+    x_position = ball_x
+    y_position = ball_y
 )
+// --------------------------------------------------
 
 
-// ----------------- Render action: position + vel-match + color -----------------
+// ----------------- Render actions: update ball + compute speeds -----------------
 render_actions update_ball_position (
-    elapsed_time = el_t   // microseconds
+    elapsed_time = el_t  // microseconds
 ) {
-    // Time since motion start (seconds)
-    t_rel_s = (el_t - t_move_start) / 1s
+    // ✅ Assign, don’t declare
+    t_s = el_t / 1s
 
-    // Cosine-ease displacement and derivative
-    s_t   = pursuit_range * ((1 - cos(2*pi() * pursuit_hz * t_rel_s)) / 2)
-    ds_dt = pursuit_range * pi() * pursuit_hz * sin(2*pi() * pursuit_hz * t_rel_s)
+    // Update ball position (smooth cosine-ease)
+    ball_x = ball_start_x + cos_deg(p_theta) * pursuit_fn(t_s)
+    ball_y = ball_start_y + sin_deg(p_theta) * pursuit_fn(t_s)
 
-    // Gate motion using move_enabled (0/1)
-    ball_pos['x'] = ball_start_pos['x'] + move_enabled * cos_deg(p_theta) * s_t
-    ball_pos['y'] = ball_start_pos['y'] + move_enabled * sin_deg(p_theta) * s_t
+    // Safe dt (seconds)
+    dt_s = max(dt_s_min, (el_t - last_el_t) / 1s)
 
-    ball_vx = move_enabled * cos_deg(p_theta) * ds_dt
-    ball_vy = move_enabled * sin_deg(p_theta) * ds_dt
-    ball_speed = sqrt(pow(ball_vx,2) + pow(ball_vy,2))
+    // Ball speed (deg/s)
+    ball_speed = sqrt(
+        pow(ball_x - last_ball_x, 2) +
+        pow(ball_y - last_ball_y, 2)
+    ) / dt_s
 
-    // Gaze velocity estimate
-    dt_s = (el_t - prev_el_t) / 1s
-    dt_s_safe = max(dt_s, 0.000001)
-    dt_ms = dt_s * 1000
+    // Gaze speed (deg/s)
+    gaze_speed = sqrt(
+        pow(eye_x - last_eye_x, 2) +
+        pow(eye_y - last_eye_y, 2)
+    ) / dt_s
 
-    gaze_vx = (eye_x - prev_eye_x) / dt_s_safe
-    gaze_vy = (eye_y - prev_eye_y) / dt_s_safe
+    // Velocity match gate
+    vel_match = (ball_speed > min_ball_speed) and (abs(gaze_speed - ball_speed) <= speed_tol)
 
-    // Smooth gaze velocity
-    gaze_vx_f = (1 - vel_smooth_alpha) * gaze_vx_f + vel_smooth_alpha * gaze_vx
-    gaze_vy_f = (1 - vel_smooth_alpha) * gaze_vy_f + vel_smooth_alpha * gaze_vy
+    // Color: cyan only when velocity matched, else white
+    if (vel_match) {
+        ball_color = [0,1,1]
+    }
+    if (not vel_match) {
+        ball_color = [1,1,1]
+    }
 
-    // Update prev samples
-    prev_el_t = el_t
-    prev_eye_x = eye_x
-    prev_eye_y = eye_y
-
-    // Velocity match metric (vector error)
-    vel_err = sqrt(pow(gaze_vx_f - ball_vx, 2) + pow(gaze_vy_f - ball_vy, 2))
-
-    raw_vel_match = move_enabled * (ball_speed >= min_ball_speed_reward) * (vel_err <= vel_match_tol)
-
-    // accumulate only while matched; else 0
-    match_accum_ms = raw_vel_match * (match_accum_ms + dt_ms)
-
-    vel_match = (match_accum_ms >= vel_match_min_ms)
-
-    // Color: cyan when matched, else white
-    ball_r = 1 - vel_match
-    ball_g = 1
-    ball_b = 1
+    // Bookkeeping
+    last_el_t   = el_t
+    last_eye_x  = eye_x
+    last_eye_y  = eye_y
+    last_ball_x = ball_x
+    last_ball_y = ball_y
 }
+// ------------------------------------------------------------------------------
 
 
 // ----------------- Trial sampler -----------------
 %define sample_pursuit_trial ()
-    p_theta = sample_list(pursuit_thetas)
+    sample_theta ()
 
     pursuit_range = max(
         abs(cos_deg(p_theta)) * display_width,
         abs(sin_deg(p_theta)) * display_height
     ) * 0.4
+    pursuit_range = max(1.0, pursuit_range)
 
     pursuit_hz = max_ball_speed / (2*pi() * pursuit_range)
-    pursuit_dur_ms = (n_cycles / pursuit_hz) * 1000
+    pursuit_hz = max(0.01, pursuit_hz)
 
-    ball_start_pos = sample_list([
-        {'x': -pursuit_range * cos_deg(p_theta),
-         'y': -pursuit_range * sin_deg(p_theta)},
-        {'x': 0, 'y': 0}
-    ])
+    pursuit_duration_s = n_cycles / pursuit_hz
+    pursuit_duration   = pursuit_duration_s * 1s
 
-    ball_start_pos['x'] += disc_rand(-1, 1) * 0.5 * pursuit_range * sin_deg(p_theta)
-    ball_start_pos['y'] += disc_rand(-1, 1) * 0.5 * pursuit_range * cos_deg(p_theta)
+    if (disc_rand(0,1) == 0) {
+        ball_start_x = -pursuit_range * cos_deg(p_theta)
+        ball_start_y = -pursuit_range * sin_deg(p_theta)
+    }
+    if (disc_rand(0,1) == 1) {
+        ball_start_x = 0
+        ball_start_y = 0
+    }
 
-    ball_pos = ball_start_pos
+    ball_start_x += disc_rand(-1, 1) * 0.5 * pursuit_range * sin_deg(p_theta)
+    ball_start_y += disc_rand(-1, 1) * 0.5 * pursuit_range * cos_deg(p_theta)
+
+    ball_x = ball_start_x
+    ball_y = ball_start_y
 %end
-
-
-// Helpers
-%define hide_ball ()
-    dequeue_stimulus (ball)
-    dequeue_stimulus (update_ball_position)
-%end
+// --------------------------------------------------
 
 
 // ============================ PROTOCOL ============================
 protocol {
     task {
+
         state 'Begin trial' {
             start_io_device (eye_tracker)
 
-            sample_pursuit_trial()
+            ball_color = [1,1,1]
+            vel_match  = 0
+            reward_pulses = 0
 
-            move_enabled = 0
-            t_move_start = 0
-            reward_line = 0
-            on_ball = 0
-
-            // reset velocity state
-            prev_el_t = 0
-            prev_eye_x = eye_x
-            prev_eye_y = eye_y
-            gaze_vx_f = 0
-            gaze_vy_f = 0
-            match_accum_ms = 0
-            vel_match = 0
-
-            ball_r = 1
-            ball_g = 1
-            ball_b = 1
-
-            hide_ball ()
-            update_display ()
+            sample_pursuit_trial ()
 
             trial_count += 1
-            report('MSG: TRIAL START, trial_count= $trial_count , theta= $p_theta , range= $pursuit_range , hz= $pursuit_hz , dur_ms= $pursuit_dur_ms')
 
-            goto ('Ball On')
-        }
-
-        state 'Ball On' {
             live_queue_stimulus (ball)
-            queue_stimulus (update_ball_position)
             update_display ()
 
+            report('MSG: TRIAL START, trial_count= $trial_count , theta= $p_theta , range= $pursuit_range , hz= $pursuit_hz , duration_s= $pursuit_duration_s')
+
             start_timer (
-                timer = pursuit_delay_timer
+                timer    = pursuit_delay_timer
                 duration = pursuit_delay_dur
             )
 
             goto (
-                target = 'Enable Motion'
+                target = 'Start pursuit'
                 when   = timer_expired(pursuit_delay_timer)
             )
         }
 
-        state 'Enable Motion' {
-            move_enabled = 1
-            t_move_start = el_t
+        state 'Start pursuit' {
+            last_el_t   = 0
+            last_eye_x  = eye_x
+            last_eye_y  = eye_y
+            last_ball_x = ball_x
+            last_ball_y = ball_y
+
+            queue_stimulus (update_ball_position)
+            update_display ()
 
             start_timer (
-                timer = pursuit_timer
-                duration = pursuit_dur_ms * 1ms
+                timer    = pursuit_timer
+                duration = pursuit_duration
             )
 
-            report('MSG: MOTION_START, trial_count= $trial_count')
-            goto ('Pursuit')
+            goto ('Pursuit loop')
         }
 
-        state 'Pursuit' {
-            // IMPORTANT: End check first
+        state 'Pursuit loop' {
+            // Pulsing reward WHILE vel_match
+            if (vel_match) {
+                pulse (
+                    variable = reward_line
+                    duration = hold_pulse_on_ms * 2ms
+                )
+                reward_pulses += 1
+            }
+
+            wait (hold_pulse_off_ms * 2ms)
+
             goto (
                 target = 'End'
                 when   = timer_expired(pursuit_timer)
             )
-            goto (
-                target = 'Velocity Matched: Pulse'
-                when   = vel_match
-            )
-        }
-
-        state 'Velocity Matched: Pulse' {
-            // ACTIONS FIRST (this fixes your error)
-            pulse (
-                variable = reward_line
-                duration = hold_pulse_on_ms * 1ms
-            )
-            wait (hold_pulse_off_ms * 1ms)
-
-            // THEN transitions
-            goto (
-                target = 'End'
-                when   = timer_expired(pursuit_timer)
-            )
-            goto (
-                target = 'Pursuit'
-                when   = 1
-            )
+            goto ('Pursuit loop')
         }
 
         state 'End' {
-            reward_line = 0
-            move_enabled = 0
-
-            report('MSG: TRIAL END, trial_count= $trial_count')
-
-            hide_ball ()
+            dequeue_stimulus (update_ball_position)
+            dequeue_stimulus (ball)
             update_display ()
 
-            stop_io_device (eye_tracker)
+            report('MSG: TRIAL END, trial_count= $trial_count , total_pulses= $reward_pulses')
 
-            goto ('ITI')
-        }
-
-        state 'ITI' {
             wait (inter_trial_duration)
+
+            stop_io_device (eye_tracker)
             goto ('Begin trial')
         }
+
     }
 }

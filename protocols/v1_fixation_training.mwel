@@ -7,7 +7,8 @@
 // ===================================================================================
 
 // %include '../output_interfaces/labjack.mwel'   // reward_line / hardware output (optional)
-var reward_line = 0
+%include '../output_interfaces/firmata.mwel'
+// var reward_line = 0
 
 stimulus_display (background_color = 0,0,0)
 
@@ -188,9 +189,9 @@ protocol {
             // --- actions first (MWEL rule) ---
             pulse (
                 variable = reward_line
-                duration = hold_pulse_on_ms * 1ms
+                duration = hold_pulse_on_ms * 2ms
             )
-            wait  (hold_pulse_off_ms * 1ms)
+            wait  (hold_pulse_off_ms * 2ms)
 
             // --- transitions after actions ---
             goto (

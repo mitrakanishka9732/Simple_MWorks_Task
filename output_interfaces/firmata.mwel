@@ -8,12 +8,12 @@ var reward_line = 0
 
 firmata output_device ( // arduino_uno
     autostart = true
-    serial_port = '/dev/cu.usbmodem2201'
-    data_interval = 1ms // for analog input
+    serial_port = '/dev/cu.usbmodem14301'
+    data_interval = 5ms // for analog input
     reconnect_interval = 1s
     ) {
     firmata_digital_output (
-        pin_number = 13
+        pin_number = 8
         value = reward_line
         )
     }
