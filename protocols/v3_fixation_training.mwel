@@ -1,14 +1,14 @@
 // ======================== Eye interface include (choose ONE) ========================
 // For desktop testing (mouse-as-eye):
-// %include '../eye_interfaces/mouse.mwel'
+%include '../eye_interfaces/mouse.mwel'
 
 // For deployment with EyeLink (uncomment this and comment the mouse include above):
-%include '../eye_interfaces/eyelink.mwel'
+//%include '../eye_interfaces/eyelink.mwel'
 // ===================================================================================
 
 // %include '../output_interfaces/labjack.mwel'   // reward_line / hardware output (optional)
-%include '../output_interfaces/firmata.mwel'
-// var reward_line = 0
+// %include '../output_interfaces/firmata.mwel'
+var reward_line = 0
 
 stimulus_display (background_color = 0,0,0)
 
@@ -61,6 +61,35 @@ var consecutive_error_trials     = 0           // counts consecutive error trial
 var extended_iti_pending         = 0           // flag: apply extended ITI on next ITI state
 var extended_iti_duration        = 200ms       // duration to use when extended ITI is pending
 // ================================================================
+
+// ----------------- NEW: trial timing & per-trial metrics -----------------
+var session_start_us             = 0
+var session_start_str            = ''
+
+var trial_start_us               = 0
+var trial_start_str              = ''
+
+var trial_outcome_us             = 0   // moment of success/failure (excludes ITI)
+var trial_outcome_str            = ''
+var trial_outcome_dur_ms         = 0
+
+var trial_end_us                 = 0   // end of ITI, just before next trial begins
+var trial_end_str                = ''
+var trial_total_dur_ms           = 0
+
+// 1 = success, 0 = failure (timeout)
+var trial_result                 = 0
+
+// fixation behavior metrics
+var fix_first_acq_us             = 0
+var fix_first_acq_latency_ms     = -1
+var fix_acq_count                = 0
+var fix_break_count              = 0
+
+var hold_start_us                = 0
+var hold_elapsed_ms              = 0
+// ---------------------------------------------------------------
+
 
 // ----------------- Adaptive state (v1-style) -----------------
 var fixation_diameter            = start_diameter
@@ -138,6 +167,26 @@ protocol {
         state 'Begin trial' {
             start_io_device (eye_tracker)
 
+            // Session start (once)
+            if (session_start_us == 0) {
+                session_start_us  = now()
+                session_start_str = date("%Y-%m-%d %H:%M:%S")
+                report('MSG: SESSION START, session_start_us= $session_start_us , session_start_str= $session_start_str')
+            }
+
+            // Trial start timing + reset per-trial metrics
+            trial_start_us   = now()
+            trial_start_str  = date("%Y-%m-%d %H:%M:%S")
+            trial_outcome_us = 0
+            trial_result     = 0
+
+            fix_first_acq_us         = 0
+            fix_first_acq_latency_ms = -1
+            fix_acq_count            = 0
+            fix_break_count          = 0
+            hold_start_us            = 0
+            hold_elapsed_ms          = 0
+
             // Recompute radius from current staircase state (diameter may have changed)
             fixation_radius = 1.25 * fixation_diameter
 
@@ -154,7 +203,7 @@ protocol {
             // For reporting: convert hold duration to ms
             fixation_hold_ms = fixation_hold_duration / 1ms
 
-            report('MSG: TRIAL START, trial_count= $trial_count , diameter= $fixation_diameter , fixation_time= $fixation_hold_ms ms, pos= ($fix_x , $fix_y) , successes= $total_successes / $trial_count , failures= $total_failures / $trial_count')
+            report('MSG: TRIAL START, trial_count= $trial_count , start_us= $trial_start_us , start_str= $trial_start_str , diameter= $fixation_diameter , fixation_time= $fixation_hold_ms ms, pos= ($fix_x , $fix_y) , successes= $total_successes / $trial_count , failures= $total_failures / $trial_count')
 
             // per-trial timeout
             start_timer (
@@ -178,6 +227,18 @@ protocol {
 
         // On acquire: CYAN, but **no reward** here.
         state 'Fixation acquired' {
+            // Count acquisitions
+            fix_acq_count += 1
+
+            // First acquisition latency (ms from trial start)
+            if (fix_first_acq_us == 0) {
+                fix_first_acq_us         = now()
+                fix_first_acq_latency_ms = (fix_first_acq_us - trial_start_us) / 1ms
+            }
+
+            // Hold timing bookkeeping
+            hold_start_us = now()
+
             fix_color = [0,1,1]
             update_display ()
 
@@ -207,6 +268,7 @@ protocol {
         }
 
         state 'Fixation broken' {
+            fix_break_count += 1
             fix_color = [1,1,1]   // back to WHITE
             update_display ()
             goto ('Wait for fixation entry')
@@ -216,9 +278,18 @@ protocol {
         state 'Fixation success' {
             // Update session-level success count first
             total_successes += 1
+            trial_result = 1
 
             // A success breaks any error streak
             consecutive_error_trials = 0
+
+            // Outcome timing (exclude ITI)
+            trial_outcome_us     = now()
+            trial_outcome_str    = date("%Y-%m-%d %H:%M:%S")
+            trial_outcome_dur_ms = (trial_outcome_us - trial_start_us) / 1ms
+
+            // How long the last hold segment actually lasted (ms)
+            hold_elapsed_ms = (trial_outcome_us - hold_start_us) / 1ms
 
             // GREEN + reward sound
             fix_color = [0,1,0]
@@ -232,19 +303,16 @@ protocol {
                     duration = success_reward_ms * 1ms
                 )
                 fixation_hold_ms = fixation_hold_duration / 1ms
-                report('MSG: SUCCESS_PULSE, ms= $success_reward_ms , trial_count= $trial_count , diameter= $fixation_diameter , fixation_time= $fixation_hold_ms ms, pos= ($fix_x , $fix_y) , successes= $total_successes / $trial_count , failures= $total_failures / $trial_count')
+                report('MSG: SUCCESS_PULSE, ms= $success_reward_ms , trial_count= $trial_count , diameter= $fixation_diameter , fixation_time= $fixation_hold_ms ms, pos= ($fix_x , $fix_y)')
             }
 
             fixation_hold_ms = fixation_hold_duration / 1ms
-            report('MSG: REWARD_AFTER_SUCCESS, trial_count= $trial_count , diameter= $fixation_diameter , fixation_time= $fixation_hold_ms ms, pos= ($fix_x , $fix_y) , successes= $total_successes / $trial_count , failures= $total_failures / $trial_count')
+            report('MSG: OUTCOME_SUCCESS, trial_count= $trial_count , outcome_us= $trial_outcome_us , outcome_str= $trial_outcome_str , outcome_dur_ms= $trial_outcome_dur_ms , first_acq_latency_ms= $fix_first_acq_latency_ms , acq_count= $fix_acq_count , break_count= $fix_break_count , last_hold_elapsed_ms= $hold_elapsed_ms , successes= $total_successes / $trial_count , failures= $total_failures / $trial_count')
 
             wait (feedback_duration)
 
             hide_circle ()
             update_display ()
-
-            fixation_hold_ms = fixation_hold_duration / 1ms
-            report('MSG: TRIAL SUCCESS, trial_count= $trial_count , diameter= $fixation_diameter , fixation_time= $fixation_hold_ms ms, pos= ($fix_x , $fix_y) , successes= $total_successes / $trial_count , failures= $total_failures / $trial_count')
 
             goto ('Update after success')
         }
@@ -257,7 +325,7 @@ protocol {
                 tighten_difficulty ()
                 consecutive_successes = 0
                 fixation_hold_ms = fixation_hold_duration / 1ms
-                report('MSG: STAIRCASE_UP, trial_count= $trial_count , new_diameter= $fixation_diameter , new_fixation_time= $fixation_hold_ms ms, successes= $total_successes / $trial_count , failures= $total_failures / $trial_count')
+                report('MSG: STAIRCASE_UP, trial_count= $trial_count , new_diameter= $fixation_diameter , new_fixation_time= $fixation_hold_ms ms')
             }
 
             goto ('ITI')
@@ -267,9 +335,15 @@ protocol {
         state 'Timeout failure' {
             // Update session-level failure count first
             total_failures += 1
+            trial_result = 0
 
             // Update streak of error trials
             consecutive_error_trials += 1
+
+            // Outcome timing (exclude ITI)
+            trial_outcome_us     = now()
+            trial_outcome_str    = date("%Y-%m-%d %H:%M:%S")
+            trial_outcome_dur_ms = (trial_outcome_us - trial_start_us) / 1ms
 
             fix_color = [1,0,0]   // RED
             update_display ()
@@ -280,7 +354,7 @@ protocol {
             update_display ()
 
             fixation_hold_ms = fixation_hold_duration / 1ms
-            report('MSG: TRIAL FAILURE, trial_count= $trial_count , diameter= $fixation_diameter , fixation_time= $fixation_hold_ms ms, pos= ($fix_x , $fix_y) , successes= $total_successes / $trial_count , failures= $total_failures / $trial_count')
+            report('MSG: OUTCOME_TIMEOUT, trial_count= $trial_count , outcome_us= $trial_outcome_us , outcome_str= $trial_outcome_str , outcome_dur_ms= $trial_outcome_dur_ms , first_acq_latency_ms= $fix_first_acq_latency_ms , acq_count= $fix_acq_count , break_count= $fix_break_count , diameter= $fixation_diameter , fixation_time= $fixation_hold_ms ms, pos= ($fix_x , $fix_y) , successes= $total_successes / $trial_count , failures= $total_failures / $trial_count')
 
             goto ('Update after failure')
         }
@@ -294,7 +368,7 @@ protocol {
                 relax_difficulty ()
                 consecutive_failures = 0
                 fixation_hold_ms = fixation_hold_duration / 1ms
-                report('MSG: STAIRCASE_DOWN, trial_count= $trial_count , new_diameter= $fixation_diameter , new_fixation_time= $fixation_hold_ms ms, successes= $total_successes / $trial_count , failures= $total_failures / $trial_count')
+                report('MSG: STAIRCASE_DOWN, trial_count= $trial_count , new_diameter= $fixation_diameter , new_fixation_time= $fixation_hold_ms ms')
             }
 
             // --- ITI escalation based on 3-error streaks ---
@@ -314,7 +388,6 @@ protocol {
 
         // ---------- ITI & Loop ----------
         state 'ITI' {
-            // If we have an extended ITI pending from a 3-error streak, use it once
             if (extended_iti_pending) {
                 wait (extended_iti_duration)
                 extended_iti_pending = 0
@@ -327,6 +400,13 @@ protocol {
         }
 
         state 'End trial' {
+            // Trial end timing (includes ITI)
+            trial_end_us       = now()
+            trial_end_str      = date("%Y-%m-%d %H:%M:%S")
+            trial_total_dur_ms = (trial_end_us - trial_start_us) / 1ms
+
+            report('MSG: TRIAL END, trial_count= $trial_count , result= $trial_result , end_us= $trial_end_us , end_str= $trial_end_str , total_dur_ms= $trial_total_dur_ms')
+
             stop_io_device (eye_tracker)
             goto ('Begin trial')   // continuous training loop
         }

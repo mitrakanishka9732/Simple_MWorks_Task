@@ -1,16 +1,16 @@
 // ======================== Eye interface include (choose ONE) ========================
 // For desktop testing (mouse-as-eye):
-// %include '../eye_interfaces/mouse.mwel'
+%include '../eye_interfaces/mouse.mwel'
 
 // For deployment with EyeLink (uncomment this and comment the mouse include above):
-%include '../eye_interfaces/eyelink.mwel'
+// %include '../eye_interfaces/eyelink.mwel'
 // ===================================================================================
 
 
 // ======================== Reward / output interface (optional) =====================
 // Uncomment if using LabJack output interface:
-%include '../output_interfaces/firmata.mwel'
-// var reward_line = 0
+// %include '../output_interfaces/firmata.mwel'
+var reward_line = 0
 // ===================================================================================
 
 stimulus_display (background_color = 0,0,0)
@@ -109,7 +109,6 @@ ellipse ball (
 render_actions update_ball_position (
     elapsed_time = el_t  // microseconds
 ) {
-    // ✅ Assign, don’t declare
     t_s = el_t / 1s
 
     // Update ball position (smooth cosine-ease)
